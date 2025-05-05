@@ -772,6 +772,8 @@ start_init(void *dummy)
 	struct thread *td;
 	struct proc *p;
 	struct vmspace *oldvmspace;
+ 
+	printf("John L: Kernel initialized userspace\n"); 
 
 	TSENTER();	/* Here so we don't overlap with mi_startup. */
 

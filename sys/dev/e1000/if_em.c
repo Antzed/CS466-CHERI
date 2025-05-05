@@ -5364,6 +5364,7 @@ em_if_debug(if_ctx_t ctx)
 static void
 em_print_debug_info(struct e1000_softc *sc)
 {
+
 	device_t dev = iflib_get_dev(sc->ctx);
 	if_t ifp = iflib_get_ifp(sc->ctx);
 	struct tx_ring *txr = &sc->tx_queues->txr;
