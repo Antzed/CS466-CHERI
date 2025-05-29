@@ -1,0 +1,396 @@
+--- if_em.c
++++ if_em.c
+@@ -80,6 +80,12 @@
+ #include <sys/sx.h>
+ #include <sys/taskqueue.h>
+ 
++/* CHERI-specific includes */
++#include <sys/capability.h>
++#include <sys/types.h>
++#include <sys/conf.h>
++#include <cheri/cheric.h>
++
+ #include <net/bpf.h>
+ #include <net/ethernet.h>
+ #include <net/if.h>
+@@ -147,6 +153,38 @@
+ static const char em_driver_version[] = "7.7.8-fbsd";
+ static const char igb_driver_version[] = "2.5.28-fbsd";
+ 
++/* 
++ * Add CHERI capability extension structure 
++ * This will be added to the e1000_softc structure
++ */
++struct e1000_cheri_extension {
++    /* Character device for userspace access */
++    struct cdev *cdev;
++    
++    /* Capability references for controlled delegation */
++    void * __capability regs_cap;         /* Capability to device registers */
++    void * __capability *dma_tx_caps;     /* Array of TX DMA buffer capabilities */
++    void * __capability *dma_rx_caps;     /* Array of RX DMA buffer capabilities */
++    
++    /* Process allowed to access this device */
++    pid_t authorized_pid;
++    
++    /* Flags for userspace driver state */
++    bool userspace_active;
++    bool kernel_driver_disabled;
++};
++
++/* IOCTL commands for capability delegation */
++#define EM_CHERI_IOC_GET_REGS_CAP    _IOR('e', 1, void * __capability)
++#define EM_CHERI_IOC_GET_TX_DMA_CAP  _IOWR('e', 2, int)
++#define EM_CHERI_IOC_GET_RX_DMA_CAP  _IOWR('e', 3, int)
++#define EM_CHERI_IOC_SET_AUTHORIZED  _IOW('e', 4, pid_t)
++#define EM_CHERI_IOC_ENABLE_KERNEL   _IO('e', 5)
++#define EM_CHERI_IOC_DISABLE_KERNEL  _IO('e', 6)
++
++static int em_cheri_open(struct cdev *dev, int flags, int fmt, struct thread *td);
++static int em_cheri_close(struct cdev *dev, int flags, int fmt, struct thread *td);
++static int em_cheri_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int fflag, struct thread *td);
++
+ /*********************************************************************
+  *  PCI Device ID Table
+  *
+@@ -444,6 +482,16 @@
+ 	DEVMETHOD_END
+ };
+ 
++/* Character device operations */
++static struct cdevsw em_cheri_cdevsw = {
++    .d_version = D_VERSION,
++    .d_open = em_cheri_open,
++    .d_close = em_cheri_close,
++    .d_ioctl = em_cheri_ioctl,
++    .d_name = "em_cheri",
++    .d_flags = D_TRACKCLOSE,
++};
++
+ static driver_t em_if_driver = {
+ 	"em_if", em_if_methods, sizeof(struct e1000_softc)
+ };
+@@ -698,6 +746,7 @@
+ em_if_attach_pre(if_ctx_t ctx)
+ {
+ 	struct e1000_softc *sc;
++	struct e1000_cheri_extension *cheri_ext;
+ 	if_softc_ctx_t scctx;
+ 	device_t dev;
+ 	struct e1000_hw *hw;
+@@ -954,11 +1003,42 @@
+ 	/* Copy the permanent MAC address out of the EEPROM */
+ 	if (e1000_read_mac_addr(hw) < 0) {
+ 		device_printf(dev, "EEPROM read error while reading MAC"
+-			      " address\n");
++		               " address\n");
+ 		error = EIO;
+ 		goto err_late;
+ 	}
+ 
++	/* Allocate and initialize the CHERI extension structure */
++	sc->cheri_ext = malloc(sizeof(struct e1000_cheri_extension), 
++	                       M_DEVBUF, M_WAITOK | M_ZERO);
++	if (sc->cheri_ext == NULL) {
++		device_printf(dev, "Unable to allocate CHERI extension\n");
++		error = ENOMEM;
++		goto err_late;
++	}
++	
++	cheri_ext = sc->cheri_ext;
++	
++	/* Create capability to device registers */
++	cheri_ext->regs_cap = cheri_capability_build_user_data(
++	    (void *)sc->osdep.mem_bus_space_handle,  /* Base address */
++	    rman_get_size(sc->memory),               /* Size of region */
++	    cheri_perm_load | cheri_perm_store       /* Permissions */
++	);
++	
++	/* Create character device for userspace access */
++	error = make_dev_p(MAKEDEV_CHECKNAME | MAKEDEV_WAITOK,
++	                  &cheri_ext->cdev,
++	                  &em_cheri_cdevsw,
++	                  0,
++	                  UID_ROOT,
++	                  GID_WHEEL,
++	                  0600,
++	                  "em_cheri%d", device_get_unit(dev));
++	if (error != 0) {
++		device_printf(dev, "Failed to create character device: %d\n", error);
++		free(sc->cheri_ext, M_DEVBUF);
++		sc->cheri_ext = NULL;
++		goto err_late;
++	}
++	
++	/* Store the softc in the character device for reference */
++	cheri_ext->cdev->si_drv1 = sc;
++	
++	device_printf(dev, "CHERI capability support enabled\n");
++
+ 	if (!em_is_valid_ether_addr(hw->mac.addr)) {
+ 		if (sc->vf_ifp) {
+ 			ether_gen_addr(iflib_get_ifp(ctx),
+@@ -1010,6 +1090,49 @@
+ 	em_update_stats_counters(sc);
+ 	hw->mac.get_link_status = 1;
+ 	em_if_update_admin_status(ctx);
++
++	/* Create capabilities for TX/RX DMA buffers if CHERI support is enabled */
++	if (sc->cheri_ext != NULL) {
++		struct e1000_tx_queue *tx_que;
++		struct e1000_rx_queue *rx_que;
++		int i;
++		struct e1000_cheri_extension *cheri_ext = sc->cheri_ext;
++		if_softc_ctx_t scctx = sc->shared;
++		
++		/* Allocate arrays to hold capability pointers */
++		cheri_ext->dma_tx_caps = malloc(sizeof(void * __capability) * sc->tx_num_queues,
++		                                M_DEVBUF, M_WAITOK | M_ZERO);
++		if (cheri_ext->dma_tx_caps == NULL) {
++			device_printf(sc->dev, "Failed to allocate TX DMA capability array\n");
++			goto skip_caps;
++		}
++		
++		cheri_ext->dma_rx_caps = malloc(sizeof(void * __capability) * sc->rx_num_queues,
++		                                M_DEVBUF, M_WAITOK | M_ZERO);
++		if (cheri_ext->dma_rx_caps == NULL) {
++			device_printf(sc->dev, "Failed to allocate RX DMA capability array\n");
++			free(cheri_ext->dma_tx_caps, M_DEVBUF);
++			cheri_ext->dma_tx_caps = NULL;
++			goto skip_caps;
++		}
++		
++		/* Create capabilities for TX queues */
++		for (i = 0, tx_que = sc->tx_queues; i < sc->tx_num_queues; i++, tx_que++) {
++			struct tx_ring *txr = &tx_que->txr;
++			
++			cheri_ext->dma_tx_caps[i] = cheri_capability_build_user_data(
++			    txr->tx_base,                             /* Base address */
++			    scctx->isc_ntxd[0] * scctx->isc_txd_size[0], /* Size */
++			    cheri_perm_load | cheri_perm_store        /* Permissions */
++			);
++		}
++		
++		/* Create capabilities for RX queues */
++		for (i = 0, rx_que = sc->rx_queues; i < sc->rx_num_queues; i++, rx_que++) {
++			struct rx_ring *rxr = &rx_que->rxr;
++			
++			cheri_ext->dma_rx_caps[i] = cheri_capability_build_user_data(
++			    rxr->rx_base,                             /* Base address */
++			    scctx->isc_nrxd[0] * scctx->isc_rxd_size[0], /* Size */
++			    cheri_perm_load | cheri_perm_store        /* Permissions */
++			);
++		}
++	}
++
++skip_caps:
+ 	em_add_hw_stats(sc);
+ 
+ 	/* Non-AMT based hardware can now take control from firmware */
+@@ -1030,6 +1153,31 @@
+ 
+ 	INIT_DEBUGOUT("em_if_detach: begin");
+ 
++	/* Clean up CHERI capability resources */
++	if (sc->cheri_ext != NULL) {
++		struct e1000_cheri_extension *cheri_ext = sc->cheri_ext;
++		
++		if (cheri_ext->cdev != NULL) {
++			destroy_dev(cheri_ext->cdev);
++			cheri_ext->cdev = NULL;
++		}
++		
++		/* Free capability arrays */
++		if (cheri_ext->dma_tx_caps != NULL) {
++			free(cheri_ext->dma_tx_caps, M_DEVBUF);
++			cheri_ext->dma_tx_caps = NULL;
++		}
++		
++		if (cheri_ext->dma_rx_caps != NULL) {
++			free(cheri_ext->dma_rx_caps, M_DEVBUF);
++			cheri_ext->dma_rx_caps = NULL;
++		}
++		
++		free(sc->cheri_ext, M_DEVBUF);
++		sc->cheri_ext = NULL;
++	}
++
++	/* Perform standard detach operations */
+ 	e1000_phy_hw_reset(&sc->hw);
+ 
+ 	em_release_manageability(sc);
+@@ -1056,6 +1204,14 @@
+ {
+ 	struct e1000_softc *sc = iflib_get_softc(ctx);
+ 
++	/* If userspace driver is active, don't change hardware state */
++	if (sc->cheri_ext != NULL && 
++	    sc->cheri_ext->userspace_active && 
++	    sc->cheri_ext->kernel_driver_disabled) {
++		device_printf(sc->dev, "Userspace driver active, bypassing suspend\n");
++		return (0);
++	}
++
+ 	em_release_manageability(sc);
+ 	em_release_hw_control(sc);
+ 	em_enable_wakeup(ctx);
+@@ -1068,9 +1224,117 @@
+ {
+ 	struct e1000_softc *sc = iflib_get_softc(ctx);
+ 
++	/* If userspace driver is active, don't reinitialize hardware */
++	if (sc->cheri_ext != NULL && 
++	    sc->cheri_ext->userspace_active && 
++	    sc->cheri_ext->kernel_driver_disabled) {
++		device_printf(sc->dev, "Userspace driver active, bypassing resume\n");
++		return (0);
++	}
++
+ 	if (sc->hw.mac.type == e1000_pch2lan)
+ 		e1000_resume_workarounds_pchlan(&sc->hw);
+ 	em_if_init(ctx);
+ 	em_init_manageability(sc);
+ 
+ 	return(0);
+ }
++
++/*
++ * Character device open operation
++ */
++static int
++em_cheri_open(struct cdev *dev, int flags, int fmt, struct thread *td)
++{
++	struct e1000_softc *sc = dev->si_drv1;
++	struct e1000_cheri_extension *cheri_ext = sc->cheri_ext;
++	
++	/* 
++	 * Only allow the authorized process to open the device, 
++	 * or allow the first opener to become the authorized process
++	 */
++	if (cheri_ext->authorized_pid != 0 && 
++	    cheri_ext->authorized_pid != td->td_proc->p_pid) {
++		return EPERM;
++	}
++	
++	return 0;
++}
++
++/*
++ * Character device close operation
++ */
++static int
++em_cheri_close(struct cdev *dev, int flags, int fmt, struct thread *td)
++{
++	struct e1000_softc *sc = dev->si_drv1;
++	struct e1000_cheri_extension *cheri_ext = sc->cheri_ext;
++	
++	/* If the authorized process is closing, clear the authorization */
++	if (cheri_ext->authorized_pid == td->td_proc->p_pid) {
++		/* If userspace driver was active, re-enable kernel driver */
++		if (cheri_ext->kernel_driver_disabled) {
++			device_printf(sc->dev, "Userspace driver closing, re-enabling kernel driver\n");
++			cheri_ext->userspace_active = false;
++			cheri_ext->kernel_driver_disabled = false;
++			/* Re-enable kernel driver here */
++			em_if_init(sc->ctx);
++		}
++	}
++	
++	return 0;
++}
++
++/*
++ * Character device ioctl operations for capability delegation
++ */
++static int
++em_cheri_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int fflag, struct thread *td)
++{
++	struct e1000_softc *sc = dev->si_drv1;
++	struct e1000_cheri_extension *cheri_ext = sc->cheri_ext;
++	int error = 0;
++	
++	/* Check if this is the authorized process or if no process is authorized yet */
++	if (cheri_ext->authorized_pid != 0 && 
++	    cheri_ext->authorized_pid != td->td_proc->p_pid) {
++		return EPERM;
++	}
++	
++	switch (cmd) {
++	case EM_CHERI_IOC_GET_REGS_CAP:
++		/* Transfer register capability to userspace */
++		*((void * __capability *)data) = cheri_ext->regs_cap;
++		
++		/* Record the authorized PID if not already set */
++		if (cheri_ext->authorized_pid == 0)
++			cheri_ext->authorized_pid = td->td_proc->p_pid;
++		break;
++		
++	case EM_CHERI_IOC_GET_TX_DMA_CAP: {
++		/* Check if index is valid */
++		int tx_index = *(int *)data;
++		if (tx_index < 0 || tx_index >= sc->tx_num_queues) {
++			return EINVAL;
++		}
++		
++		/* Transfer TX DMA capability to userspace */
++		*((void * __capability *)data) = cheri_ext->dma_tx_caps[tx_index];
++		
++		/* Record the authorized PID if not already set */
++		if (cheri_ext->authorized_pid == 0)
++			cheri_ext->authorized_pid = td->td_proc->p_pid;
++		break;
++	}
++		
++	case EM_CHERI_IOC_GET_RX_DMA_CAP: {
++		/* Check if index is valid */
++		int rx_index = *(int *)data;
++		if (rx_index < 0 || rx_index >= sc->rx_num_queues) {
++			return EINVAL;
++		}
++		
++		/* Transfer RX DMA capability to userspace */
++		*((void * __capability *)data) = cheri_ext->dma_rx_caps[rx_index];
++		
++		/* Record the authorized PID if not already set */
++		if (cheri_ext->authorized_pid == 0)
++			cheri_ext->authorized_pid = td->td_proc->p_pid;
++		break;
++	}
++		
++	case EM_CHERI_IOC_SET_AUTHORIZED:
++		/* Only allow root to change the authorized PID */
++		if (priv_check(td, PRIV_DRIVER) != 0) {
++			return EPERM;
++		}
++		
++		/* Set the authorized PID */
++		cheri_ext->authorized_pid = *(pid_t *)data;
++		break;
++		
++	case EM_CHERI_IOC_DISABLE_KERNEL:
++		/* Disable the kernel driver for userspace control */
++		cheri_ext->userspace_active = true;
++		cheri_ext->kernel_driver_disabled = true;
++		
++		/* Stop the kernel driver functionality */
++		em_if_stop(sc->ctx);
++		device_printf(sc->dev, "Kernel driver disabled for userspace control\n");
++		break;
++		
++	case EM_CHERI_IOC_ENABLE_KERNEL:
++		/* Re-enable the kernel driver */
++		cheri_ext->userspace_active = false;
++		cheri_ext->kernel_driver_disabled = false;
++		
++		/* Re-initialize the kernel driver */
++		em_if_init(sc->ctx);
++		device_printf(sc->dev, "Kernel driver re-enabled\n");
++		break;
++		
++	default:
++		error = ENOTTY;
++		break;
++	}
++	
++	return error;
++}

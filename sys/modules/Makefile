@@ -8,8 +8,13 @@ SUBDIR_PARALLEL=
 
 .include "${SYSDIR}/conf/config.mk"
 
+_mydev= mydev
+_if_empol= if_empol 
+
 .if defined(MODULES_OVERRIDE) && !defined(ALL_MODULES)
-SUBDIR=${MODULES_OVERRIDE}
+SUBDIR=${MODULES_OVERRIDE} \
+		${_mydev} \
+		${_if_empol}
 .else
 SUBDIR=	\
 	${_3dfx} \
@@ -431,7 +436,9 @@ SUBDIR=	\
 	xdr \
 	xl \
 	xz \
-	zlib
+	zlib \
+	${_mydev} \
+	${_if_empol}
 
 .if ${MK_AUTOFS} != "no" || defined(ALL_MODULES)
 _autofs=	autofs
