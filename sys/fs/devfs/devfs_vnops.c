@@ -1968,6 +1968,8 @@ devfs_mmap_f(struct file *fp, vm_map_t map, vm_pointer_t *addr,
     vm_prot_t cap_maxprot, int flags, vm_ooffset_t foff,
     struct thread *td, void * __kerncap extra)
 {
+	printf("DEVFS: Start\n");
+
 	struct cdev *dev;
 	struct cdevsw *dsw;
 	struct mount *mp;
@@ -1995,6 +1997,8 @@ devfs_mmap_f(struct file *fp, vm_map_t map, vm_pointer_t *addr,
 	else if ((prot & VM_PROT_READ) != 0)
 		return (EACCES);
 
+	printf("DEVFS: After Compat Check\n");
+
 	/*
 	 * If we are sharing potential changes via MAP_SHARED and we
 	 * are trying to get write permission although we opened it
@@ -2018,11 +2022,14 @@ devfs_mmap_f(struct file *fp, vm_map_t map, vm_pointer_t *addr,
 		maxprot = VM_PROT_ADD_CAP(maxprot);
 	maxprot &= cap_maxprot;
 
+	printf("DEVFS: Check Flags and Prots\n");
+
 	fpop = td->td_fpop;
 	error = devfs_fp_check(fp, &dev, &dsw, &ref);
 	if (error != 0)
 		return (error);
 
+	printf("DEVFS: Before CDEV\n");
 	error = vm_mmap_cdev(td, size, &prot, &maxprot, &flags, dev, dsw, &foff,
 	    &object, extra);
 	td->td_fpop = fpop;
@@ -2030,6 +2037,7 @@ devfs_mmap_f(struct file *fp, vm_map_t map, vm_pointer_t *addr,
 	if (error != 0)
 		return (error);
 
+	printf("DEVFS: Before Object\n");
 	error = vm_mmap_object(map, addr, max_addr, size, prot, maxprot,
 	    flags, object, foff, FALSE, td);
 	if (error != 0)
