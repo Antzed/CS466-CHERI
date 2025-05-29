@@ -1888,7 +1888,7 @@
  int
  vm_mmap_cdev(struct thread *td, vm_size_t objsize, vm_prot_t *protp,
 	 vm_prot_t *maxprotp, int *flagsp, struct cdev *cdev, struct cdevsw *dsw,
-	 vm_ooffset_t *foff, vm_object_t *objp, void * __kercap extra)
+	 vm_ooffset_t *foff, vm_object_t *objp, void * __kerncap extra)
  {
 	 vm_object_t obj;
 	 vm_prot_t prot;
@@ -1932,7 +1932,7 @@
 	  * XXX assumes VM_PROT_* == PROT_*
 	  */
 	 if(extra != NULL){
-		uprintf("Hello From MMAP For New Single\n")
+		uprintf("Hello From MMAP For New Single\n");
 		error = dsw->d_mmap_single_extra(cdev, foff, objsize, objp, (int)prot, extra);
 	 }
 	 else{
