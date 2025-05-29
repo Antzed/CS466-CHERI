@@ -1595,7 +1595,7 @@ linux_file_mmap_sub(struct thread *td, vm_size_t objsize, vm_prot_t prot,
 static int
 linux_file_mmap(struct file *fp, vm_map_t map, vm_pointer_t *addr,
     vm_offset_t max_addr, vm_size_t size, vm_prot_t prot,
-    vm_prot_t cap_maxprot, int flags, vm_ooffset_t foff, struct thread *td)
+    vm_prot_t cap_maxprot, int flags, vm_ooffset_t foff, struct thread *td, void * __kerncap extra)
 {
 	struct linux_file *filp;
 	const struct file_operations *fop;

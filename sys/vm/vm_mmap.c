@@ -473,6 +473,7 @@
 	 int align, error, fd, flags;
 	 cap_rights_t rights;
 	 mmap_check_fp_fn check_fp_fn;
+	 void * __kerncap extra;
  
 	 orig_addr = addr = mrp->mr_hint;
 	 max_addr = mrp->mr_max_addr;
@@ -481,6 +482,7 @@
 	 fd = mrp->mr_fd;
 	 pos = mrp->mr_pos;
 	 check_fp_fn = mrp->mr_check_fp_fn;
+	 extra = mrp->mr_extra;
  
 	 p = td->td_proc;
  
@@ -772,7 +774,7 @@
 		 if (fp->f_ops == &shm_ops && shm_largepage(fp->f_data))
 			 addr = orig_addr;
 		 error = fo_mmap(fp, &vms->vm_map, &addr, max_addr, size,
-			 prot, max_prot, flags, pos, td);
+			 prot, max_prot, flags, pos, td, extra);
 	 }
  
 	 if (error == 0) {

@@ -1732,7 +1732,7 @@ int
 shm_mmap(struct file *fp, vm_map_t map, vm_pointer_t *addr,
     vm_offset_t max_addr, vm_size_t objsize,
     vm_prot_t prot, vm_prot_t max_maxprot, int flags,
-    vm_ooffset_t foff, struct thread *td)
+    vm_ooffset_t foff, struct thread *td, void * __kerncap extra)
 {
 	struct shmfd *shmfd;
 	vm_prot_t maxprot;

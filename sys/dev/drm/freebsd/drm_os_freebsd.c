@@ -547,7 +547,7 @@ drm_fstub_do_mmap(struct file *file, const struct file_operations *fops,
 static int
 drm_fstub_mmap(struct file *file, vm_map_t map, vm_pointer_t *addr,
     vm_offset_t max_addr, vm_size_t size, vm_prot_t prot,
-    vm_prot_t cap_maxprot, int flags, vm_ooffset_t foff, struct thread *td)
+    vm_prot_t cap_maxprot, int flags, vm_ooffset_t foff, struct thread *td, void * __kerncap extra)
 {
 	struct cdev *cdev;
 	struct drm_minor *minor;
