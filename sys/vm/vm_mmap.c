@@ -1888,7 +1888,7 @@
  int
  vm_mmap_cdev(struct thread *td, vm_size_t objsize, vm_prot_t *protp,
 	 vm_prot_t *maxprotp, int *flagsp, struct cdev *cdev, struct cdevsw *dsw,
-	 vm_ooffset_t *foff, vm_object_t *objp)
+	 vm_ooffset_t *foff, vm_object_t *objp, void * __kercap extra)
  {
 	 vm_object_t obj;
 	 vm_prot_t prot;
@@ -1931,7 +1931,13 @@
 	  *
 	  * XXX assumes VM_PROT_* == PROT_*
 	  */
-	 error = dsw->d_mmap_single(cdev, foff, objsize, objp, (int)prot);
+	 if(extra != NULL){
+		uprintf("Hello From MMAP For New Single\n")
+		error = dsw->d_mmap_single_extra(cdev, foff, objsize, objp, (int)prot, extra);
+	 }
+	 else{
+		error = dsw->d_mmap_single(cdev, foff, objsize, objp, (int)prot);
+	 }
 	 if (error != ENODEV)
 		 return (error);
 	 obj = vm_pager_allocate(OBJT_DEVICE, cdev, objsize, prot, *foff,
@@ -1978,7 +1984,7 @@
 		 if (dsw == NULL)
 			 return (ENXIO);
 		 error = vm_mmap_cdev(td, size, &prot, &maxprot, &flags, cdev,
-			 dsw, &foff, &object);
+			 dsw, &foff, &object, NULL);
 		 dev_relthread(cdev, ref);
 		 break;
 	 }

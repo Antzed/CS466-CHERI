@@ -122,6 +122,8 @@ typedef int d_mmap_t(struct cdev *dev, vm_ooffset_t offset, vm_paddr_t *paddr,
 		     int nprot, vm_memattr_t *memattr);
 typedef int d_mmap_single_t(struct cdev *cdev, vm_ooffset_t *offset,
     vm_size_t size, struct vm_object **object, int nprot);
+typedef int d_mmap_single_extra_t(struct cdev *cdev, vm_ooffset_t *offset,
+	vm_size_t size, struct vm_object **object, int nprot, void * __kercap extra);
 typedef void d_purge_t(struct cdev *dev);
 
 typedef int dumper_t(
@@ -209,6 +211,7 @@ struct cdevsw {
 	d_kqfilter_t		*d_kqfilter;
 	d_purge_t		*d_purge;
 	d_mmap_single_t		*d_mmap_single;
+	d_mmap_single_extra_t *d_mmap_single_extra;
 
 	int32_t			d_spare1[3];
 	void			*d_spare2[3];
