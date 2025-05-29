@@ -123,7 +123,7 @@ typedef int d_mmap_t(struct cdev *dev, vm_ooffset_t offset, vm_paddr_t *paddr,
 typedef int d_mmap_single_t(struct cdev *cdev, vm_ooffset_t *offset,
     vm_size_t size, struct vm_object **object, int nprot);
 typedef int d_mmap_single_extra_t(struct cdev *cdev, vm_ooffset_t *offset,
-	vm_size_t size, struct vm_object **object, int nprot, void * __kercap extra);
+	vm_size_t size, struct vm_object **object, int nprot, void * __kerncap extra);
 typedef void d_purge_t(struct cdev *dev);
 
 typedef int dumper_t(
