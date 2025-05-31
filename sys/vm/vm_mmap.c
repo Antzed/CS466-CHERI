@@ -318,7 +318,7 @@
 
 	 return sys_mmap_priv(td, (struct mmap_args_mod *)uap);
  }
- 
+
  int
  sys_mmap_priv(struct thread *td, struct mmap_args_mod *uap)
  {
@@ -428,7 +428,7 @@
 	  * set at this point.  A simple assert is not easy to contruct...
 	  */
  
-	 return (kern_mmap(td, &(struct mmap_req){
+	 return (kern_mmap_root(td, &(struct mmap_req){
 		 .mr_hint = hint,
 		 .mr_max_addr = cheri_gettop(source_cap),
 		 .mr_len = uap->len,
@@ -464,6 +464,113 @@
  kern_mmap(struct thread *td, const struct mmap_req *mrp){
 	mrp->mr_extra = NULL;
 	kern_mmap_root(td, mrp);
+ }
+
+int
+kern_cap_hook(struct thread* td, struct mmap_req_hook *uap){
+	int flags = uap->flags, kern_flags = 0;
+	void * __capability source_cap;
+	register_t perms, reqperms;
+	vm_offset_t hint;
+ 
+	if (flags & MAP_32BIT) {
+	 SYSERRCAUSE("MAP_32BIT not supported in CheriABI");
+	 return (EINVAL);
+	}
+ 
+	/*
+	 * Allow existing mapping to be replaced using the MAP_FIXED
+	 * flag IFF the addr argument is a valid capability with the
+	 * SW_VMEM user permission.  In this case, the new capability is
+	 * derived from the passed capability.  In all other cases, the
+	 * new capability is derived from the per-thread mmap capability.
+	 *
+	 * If MAP_FIXED specified and addr does not meet the above
+	 * requirements, then MAP_EXCL is implied to prevent changing
+	 * page contents without permission.
+	 *
+	 * XXXBD: The fact that using valid a capability to a currently
+	 * unmapped region with and without the SW_VMEM permission will
+	 * yield different results (and even failure modes) is potentially
+	 * confusing and incompatible with non-CHERI code.  One could
+	 * potentially check if the region contains any mappings and
+	 * switch to using userspace_root_cap as the source
+	 * capability if this pattern proves common.
+	 */
+	hint = cheri_getaddress(uap->addr);
+ 
+	if (cheri_gettag(uap->addr)) {
+	 if ((flags & MAP_FIXED) == 0)
+		 return (EPROT);
+	 else if ((flags & MAP_STACK) != 0)
+		 return (ENOMEM);
+	 else if ((cheri_getperm(uap->addr) & CHERI_PERM_SW_VMEM))
+		 source_cap = uap->addr;
+	 else {
+		 SYSERRCAUSE("MAP_FIXED without CHERI_PERM_SW_VMEM");
+		 return (EACCES);
+	 }
+	} else {
+	 if (!cheri_is_null_derived(uap->addr))
+		 return (EINVAL);
+ 
+	 /*
+	  * When a capability is not provided, we implicitly
+	  * request the creation of a reservation.
+	  */
+	 kern_flags |= MAP_RESERVATION_CREATE;
+ 
+	 if (flags & MAP_FIXED)
+		 flags |= MAP_EXCL;
+ 
+	 source_cap = userspace_root_cap;
+	}
+	KASSERT(cheri_gettag(source_cap),
+	 ("td->td_cheri_mmap_cap is untagged!"));
+ 
+	/*
+	 * If MAP_FIXED is specified, make sure that the requested
+	 * address range fits within the source capability.
+	 */
+	if ((flags & MAP_FIXED) &&
+	 (rounddown2(hint, PAGE_SIZE) < cheri_getbase(source_cap) ||
+	 roundup2(hint + uap->len, PAGE_SIZE) >
+	 cheri_getaddress(source_cap) + cheri_getlen(source_cap))) {
+	 SYSERRCAUSE("MAP_FIXED and too little space in "
+		 "capablity (0x%zx < 0x%zx)",
+		 cheri_getlen(source_cap) - cheri_getoffset(source_cap),
+		 roundup2(uap->len, PAGE_SIZE));
+	 return (EPROT);
+	}
+ 
+	perms = cheri_getperm(source_cap);
+	reqperms = vm_map_prot2perms(uap->prot);
+ #ifdef CHERI_PERM_EXECUTIVE
+	 if ((flags & MAP_FIXED) && (perms & CHERI_PERM_EXECUTIVE) == 0)
+		 /*
+		  * Don't implicity require CHERI_PERM_EXECUTIVE if it's
+		  * not available in source capability.
+		  */
+		 reqperms &= ~CHERI_PERM_EXECUTIVE;
+ #endif
+	 if ((perms & reqperms) != reqperms) {
+		 SYSERRCAUSE("capability has insufficient perms (0x%lx)"
+			 "for request (0x%lx)", perms, reqperms);
+		 return (EPROT);
+	 }
+
+	 return (kern_mmap_root(td, &(struct mmap_req){
+		 .mr_hint = hint,
+		 .mr_max_addr = cheri_gettop(source_cap),
+		 .mr_len = uap->len,
+		 .mr_prot = uap->prot,
+		 .mr_flags = flags,
+		 .mr_kern_flags = kern_flags,
+		 .mr_fd = uap->fd,
+		 .mr_pos = uap->pos,
+		 .mr_source_cap = source_cap,
+		 .mr_extra = uap->extra,
+		 }));
  }
 
  int
