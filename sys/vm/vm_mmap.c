@@ -298,6 +298,7 @@
  #define	PADL_(t)	PAD_(t)
  #define	PADR_(t)	0
  #endif
+
  
  struct mmap_args_mod {
 	 char addr_l_[PADL_(void * __kerncap)]; void * __kerncap addr; char addr_r_[PADR_(void * __kerncap)];
@@ -428,7 +429,7 @@
 	  * set at this point.  A simple assert is not easy to contruct...
 	  */
  
-	 return (kern_mmap_root(td, &(struct mmap_req){
+	 return (kern_mmap(td, &(struct mmap_req){
 		 .mr_hint = hint,
 		 .mr_max_addr = cheri_gettop(source_cap),
 		 .mr_len = uap->len,
@@ -458,12 +459,6 @@
 		 prot != PROT_NONE)
 		  return (prot);
 	 return (PROT_READ | PROT_WRITE | PROT_EXEC);
- }
- 
- int
- kern_mmap(struct thread *td, const struct mmap_req *mrp){
-	mrp->mr_extra = NULL;
-	kern_mmap_root(td, mrp);
  }
 
 int
@@ -559,7 +554,7 @@ kern_cap_hook(struct thread* td, struct mmap_req_hook *uap){
 		 return (EPROT);
 	 }
 
-	 return (kern_mmap_root(td, &(struct mmap_req){
+	 return (kern_mmap(td, &(struct mmap_req){
 		 .mr_hint = hint,
 		 .mr_max_addr = cheri_gettop(source_cap),
 		 .mr_len = uap->len,
@@ -574,7 +569,7 @@ kern_cap_hook(struct thread* td, struct mmap_req_hook *uap){
  }
 
  int
- kern_mmap_root(struct thread *td, const struct mmap_req *mrp)
+ kern_mmap(struct thread *td, const struct mmap_req *mrp)
  {
 	 struct vmspace *vms;
 	 struct file *fp;
