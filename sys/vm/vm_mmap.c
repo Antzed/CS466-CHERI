@@ -462,7 +462,7 @@
  }
 
 int
-kern_cap_hook(struct thread* td, struct mmap_req_hook *uap){
+kern_mmap_hook(struct thread* td, struct mmap_req_hook *uap){
 	int flags = uap->flags, kern_flags = 0;
 	void * __capability source_cap;
 	register_t perms, reqperms;
