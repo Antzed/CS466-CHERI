@@ -309,11 +309,13 @@
 	 char extra_l_[PADL_(void * __kerncap)]; void * __kerncap extra; char extra_r_[PADR_(void * __kerncap)];
  };
  
- 
  int sys_mmap_priv(struct thread *td, struct mmap_args_mod *uap);
  
  int
  sys_mmap(struct thread *td, struct mmap_args *uap){
+	struct mmap_args_mod* modified = (struct mmap_args_mod *)uap;
+	modified->extra = NULL;
+
 	 return sys_mmap_priv(td, (struct mmap_args_mod *)uap);
  }
  
@@ -1932,7 +1934,11 @@
 	  * XXX assumes VM_PROT_* == PROT_*
 	  */
 	 if(extra != NULL){
-		uprintf("Hello From MMAP For New Single\n");
+		//uprintf("Hello From MMAP For New Single\n");
+		if(dsw->d_mmap_single_extra == NULL){
+			return EINVAL;
+		}
+
 		error = dsw->d_mmap_single_extra(cdev, foff, objsize, objp, (int)prot, extra);
 	 }
 	 else{
