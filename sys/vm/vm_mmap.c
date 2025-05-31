@@ -461,7 +461,13 @@
  }
  
  int
- kern_mmap(struct thread *td, const struct mmap_req *mrp)
+ kern_mmap(struct thread *td, const struct mmap_req *mrp){
+	mrp->mr_extra = NULL;
+	kern_mmap_root(td, mrp);
+ }
+
+ int
+ kern_mmap_root(struct thread *td, const struct mmap_req *mrp)
  {
 	 struct vmspace *vms;
 	 struct file *fp;
