@@ -209,6 +209,11 @@
 	  * range of access subject to page permissions.
 	  */
 	 perms = ~CHERI_PROT2PERM_MASK | vm_map_prot2perms(cap_prot);
+
+	 if(mrp->mr_extra != NULL){
+	 	perms |= CHERI_PERM_STORE_CAP | CHERI_PERM_LOAD_CAP
+	 }
+	 
 	 newcap = cheri_andperm(newcap, perms);
  
 	 return (newcap);
