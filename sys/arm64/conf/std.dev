@@ -85,7 +85,7 @@ device		uinput			# install /dev/uinput cdev
 
 # PCI/PCI-X/PCIe Ethernet NICs that use iflib infrastructure
 device		iflib
-#device		em			# Intel PRO/1000 Gigabit Ethernet Family
+device		em			# Intel PRO/1000 Gigabit Ethernet Family
 device		ix			# Intel 10Gb Ethernet Family
 
 # Ethernet NICs
