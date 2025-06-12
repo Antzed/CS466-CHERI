@@ -548,7 +548,7 @@ OBJS_DEPEND_GUESS+= opt_global.h
 
 ZINCDIR=${ZFSTOP}/include
 .if !exists(${ZINCDIR})
-.error is ZFSTOP set?
+.warning is ZFSTOP set?
 .endif
 OPENZFS_CFLAGS=     \
 	-D_SYS_VMEM_H_  \
