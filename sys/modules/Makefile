@@ -106,7 +106,6 @@ SUBDIR=	\
 	${_dwwdt} \
 	${_e6000sw} \
 	${_efirt} \
-	${_em} \
 	${_ena} \
 	${_enic} \
 	${_enetc} \
@@ -710,7 +709,7 @@ _armv8crypto=	armv8crypto
 _armv8_rng=	armv8_rng
 _dpaa2=		dpaa2
 _sff=		sff
-_em=		em
+# _em=		em
 _hyperv=  hyperv
 _vf_i2c=	vf_i2c
 
@@ -745,7 +744,7 @@ _cbb=		cbb
 _cpuctl=	cpuctl
 _cpufreq=	cpufreq
 _dpms=		dpms
-_em=		em
+# _em=		em
 _et=		et
 _ftgpio=	ftgpio
 _ftwd=		ftwd
