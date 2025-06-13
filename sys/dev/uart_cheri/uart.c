@@ -60,7 +60,7 @@ uart_open(struct cdev *dev, int flags, int devtype, struct thread *td)
         return ENXIO;
     }
 
-    UARt_UNLOCK(sc);
+    UART_UNLOCK(sc);
 	uprintf("UART: device opened\n");
 	return (0);
 }
@@ -267,13 +267,24 @@ static uart_error uart_configure(uart_softc_t* sc, uart_config* config) {
     while (sc->registers->FR & FR_BUSY);
     sc->registers->LCRH &= ~LCRH_FEN;
 
-    /* Set baudrate */
-    double intpart, fractpart;
-    double baudrate_divisor = (double)refclock / (16u * config->baudrate);
-    fractpart = modf(baudrate_divisor, &intpart);
+    /* Set baudrate using integer arithmetic to avoid floating point in kernel. */
+    uint64_t uartclk = REFCLOCK;
+    uint32_t bauddiv = 16 * config->baudrate;
+    uint32_t ibrd, fbrd;
+    
+    ibrd = uartclk / bauddiv;
+    /*
+     * FBRD = round(fractional_part * 64)
+     * fractional_part = (uartclk / bauddiv) - ibrd
+     * = (uartclk % bauddiv) / bauddiv
+     * So, FBRD = round(((uartclk % bauddiv) / bauddiv) * 64)
+     * Using integer rounding: round(x/y) = (x + y/2) / y
+     */
+    fbrd = (((uartclk % bauddiv) * 64) + (bauddiv / 2)) / bauddiv;
 
-    sc->registers->IBRD = (uint16_t)intpart;
-    sc->registers->FBRD = (uint8_t)((fractpart * 64u) + 0.5);
+    sc->baudrate = config->baudrate;
+    sc->registers->IBRD = (uint16_t)ibrd;
+    sc->registers->FBRD = (uint8_t)fbrd;
 
     uint32_t lcrh = 0u;
 
@@ -323,14 +334,14 @@ static uart_error uart_configure(uart_softc_t* sc, uart_config* config) {
     return UART_OK;
 }
 
-static void uart_putchar(char c) {
+static void uart_putchar(uart_softc_t* sc, char c) {
     while (sc->registers->FR & FR_TXFF);
     sc->registers->DR = c;
 }
 
 static void uart_write(uart_softc_t* sc, tx_uart_req_t* req) {
     for(size_t i = 0; i < req->length; i++){
-        uart_putchar(sc->page->transmit_buffer[i]);
+        uart_putchar(sc,sc->page->transmit_buffer[i]);
     }
 }
 
@@ -358,7 +369,7 @@ static int read_until(uart_softc_t* sc, rx_uart_req_t* req){
             uart_error error = uart_getchar(sc, &output_char);
             if ((error == UART_RECEIVE_ERROR) ||
                 (error == UART_NO_DATA)){
-                DELAY(1000000 / (sc->baudrate / 8))
+                DELAY(1000000 / (sc->baudrate / 8));
                 continue;
             }
             else{
@@ -389,7 +400,7 @@ uart_ioctl(struct cdev *dev, u_long cmd, caddr_t addr, int flags,
     }
 
     uprintf("UART: Cap cast\n");
-    uart_header_req* header_req = (uart_header_req_t*)addr;
+    uart_header_req_t* header_req = (uart_header_req_t*)addr;
     uart_softc_t *sc = dev->si_drv1;
 
     uprintf("UART: Null check\n");
