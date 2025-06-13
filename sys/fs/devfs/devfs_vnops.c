@@ -2026,7 +2026,7 @@ devfs_mmap_f(struct file *fp, vm_map_t map, vm_pointer_t *addr,
 		return (error);
 
 	error = vm_mmap_cdev(td, size, &prot, &maxprot, &flags, dev, dsw, &foff,
-	    &object, extra);
+	    &object, extra, map);
 	td->td_fpop = fpop;
 	dev_relthread(dev, ref);
 	if (error != 0)

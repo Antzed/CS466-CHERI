@@ -589,6 +589,7 @@ kern_mmap_hook(struct thread* td, struct mmap_req_hook *uap){
 	 cap_rights_t rights;
 	 mmap_check_fp_fn check_fp_fn;
 	 void * __kerncap extra;
+	 vm_map_t* vm_map;
  
 	 orig_addr = addr = mrp->mr_hint;
 	 max_addr = mrp->mr_max_addr;
@@ -2003,7 +2004,7 @@ kern_mmap_hook(struct thread* td, struct mmap_req_hook *uap){
  int
  vm_mmap_cdev(struct thread *td, vm_size_t objsize, vm_prot_t *protp,
 	 vm_prot_t *maxprotp, int *flagsp, struct cdev *cdev, struct cdevsw *dsw,
-	 vm_ooffset_t *foff, vm_object_t *objp, void * __kerncap extra)
+	 vm_ooffset_t *foff, vm_object_t *objp, void * __kerncap extra, vm_map_t map)
  {
 	 vm_object_t obj;
 	 vm_prot_t prot;
@@ -2052,7 +2053,7 @@ kern_mmap_hook(struct thread* td, struct mmap_req_hook *uap){
 			return EINVAL;
 		}
 
-		error = dsw->d_mmap_single_extra(cdev, foff, objsize, objp, (int)prot, extra);
+		error = dsw->d_mmap_single_extra(cdev, foff, objsize, objp, (int)prot, extra, map);
 	 }
 	 else{
 		error = dsw->d_mmap_single(cdev, foff, objsize, objp, (int)prot);
@@ -2103,7 +2104,7 @@ kern_mmap_hook(struct thread* td, struct mmap_req_hook *uap){
 		 if (dsw == NULL)
 			 return (ENXIO);
 		 error = vm_mmap_cdev(td, size, &prot, &maxprot, &flags, cdev,
-			 dsw, &foff, &object, NULL);
+			 dsw, &foff, &object, NULL, map);
 		 dev_relthread(cdev, ref);
 		 break;
 	 }
