@@ -1,4 +1,6 @@
 #include "uart.h"
+
+#include <contrib/dev/acpica/include/acpi.h>
 #include <dev/acpica/acpivar.h>
 
 #define REFCLOCK 24000000
