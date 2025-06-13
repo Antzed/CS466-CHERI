@@ -1,6 +1,7 @@
 #include "uart.h"
 
 #include <contrib/dev/acpica/include/acpi.h>
+#include <stddef.h>
 #include <dev/acpica/acpivar.h>
 
 #define REFCLOCK 24000000
@@ -428,7 +429,7 @@ uart_ioctl(struct cdev *dev, u_long cmd, caddr_t addr, int flags,
 
             uint64_t max_len = PAGE_SIZE / 2;
 
-            if(user_req->length_wanted > max_len){
+            if(user_req_rx->length_wanted > max_len){
                 device_printf(sc->dev, "User Wants Too Many Bytes\n");
                 UART_UNLOCK(sc);
                 return EINVAL;
@@ -480,7 +481,7 @@ uart_acpi_probe(device_t dev)
 	if ((h = acpi_get_handle(dev)) == NULL)
 		return ENXIO;
 
-    for (i = 0; uart_ids[i] != NULL; i++) {
+    for (size_t i = 0; uart_ids[i] != NULL; i++) {
         if (acpi_MatchHid(h, uart_ids[i])) {
             device_set_desc(dev, "PL011 Cheri-aware UART");
             return (BUS_PROBE_DEFAULT);
