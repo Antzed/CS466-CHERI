@@ -8,8 +8,11 @@ SUBDIR_PARALLEL=
 
 .include "${SYSDIR}/conf/config.mk"
 
+_uart_cheri = uart_cheri
+
 .if defined(MODULES_OVERRIDE) && !defined(ALL_MODULES)
 SUBDIR=${MODULES_OVERRIDE} \
+	${_uart_cheri}
 
 .else
 SUBDIR=	\
@@ -431,7 +434,8 @@ SUBDIR=	\
 	xdr \
 	xl \
 	xz \
-	zlib 
+	zlib \
+	${_uart_cheri}
 
 .if ${MK_AUTOFS} != "no" || defined(ALL_MODULES)
 _autofs=	autofs
