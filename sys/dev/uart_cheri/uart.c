@@ -18,7 +18,7 @@ static int uart_acpi_detach(device_t dev);
 // ACPI-compatible hardware IDs for the PL011 UART
 static char *uart_ids[] = { "ARMH0011", NULL };
 
-static int check_cap_token(uart_soft_c_t* sc, void* __capability cap_token){
+static int check_cap_token(uart_softc_t* sc, void* __capability cap_token){
     if(sc->cap_state.sealed_cap == NULL){
         return EINVAL;
     }
@@ -65,6 +65,12 @@ uart_open(struct cdev *dev, int flags, int devtype, struct thread *td)
 	return (0);
 }
 
+// probably will be expanded in the future to revoke all caps in the vm object and such
+static void revoke_cap_token(uart_softc_t* sc){
+    sc->cap_state.original_cap = NULL;
+    sc->cap_state.sealed_cap = NULL;
+}
+
 static int
 uart_close(struct cdev *dev, int flags, int devtype, struct thread *td)
 {
@@ -81,14 +87,8 @@ uart_close(struct cdev *dev, int flags, int devtype, struct thread *td)
 	return (0);
 }
 
-// probably will be expanded in the future to revoke all caps in the vm object and such
-static void revoke_cap_token(uart_soft_c_t* sc){
-    sc->cap_state.original_cap = NULL;
-    sc->cap_state.sealed_cap = NULL;
-}
-
 static int
-create_our_cdev(uart_soft_c_t* sc){
+create_our_cdev(uart_softc_t* sc){
     sc->cdev = make_dev(&uart_cdevsw, 0, UID_ROOT, GID_WHEEL,
         0600, "uart-cheri");
     if(sc->cdev == NULL){
@@ -98,7 +98,7 @@ create_our_cdev(uart_soft_c_t* sc){
     sc->cdev->si_drv1 = sc;
 
     // allocate shared mem using VM system instead of contigmalloc
-    sc->page = (uart_registers* __kerncap)malloc(sizeof(uart_registers), M_DEVBUF, M_WAITOK | M_ZERO);
+    sc->page = (uart_buffers_t* __kerncap)malloc(sizeof(uart_registers), M_DEVBUF, M_WAITOK | M_ZERO);
     if(sc->page == NULL){
         destroy_dev(sc->cdev);
         device_printf(sc->dev, "Failed to create shared mem\n");
@@ -328,13 +328,13 @@ void uart_putchar(char c) {
     sc->registers->DR = c;
 }
 
-void uart_write(uart_soft_c_t* sc, tx_uart_req_t* req) {
+void uart_write(uart_softc_t* sc, tx_uart_req_t* req) {
     for(size_t i = 0; i < req->length; i++){
         uart_putchar(sc->page->transmit_buffer[i]);
     }
 }
 
-uart_error uart_getchar(uart_soft_c_t* sc, char* c) {
+uart_error uart_getchar(uart_softc_t* sc, char* c) {
     if (sc->registers->FR & FR_RXFE) {
         return UART_NO_DATA;
     }
@@ -348,7 +348,7 @@ uart_error uart_getchar(uart_soft_c_t* sc, char* c) {
     return UART_OK;
 }
 
-int read_until(uart_soft_c_t* sc, rx_uart_req_t* req){
+int read_until(uart_softc_t* sc, rx_uart_req_t* req){
     size_t ammount_read = 0;
     while(ammount_read < req->length_wanted){
         char output_char;
