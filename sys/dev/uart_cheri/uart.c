@@ -250,7 +250,7 @@ static int uart_mmap_single_extra(struct cdev *cdev, vm_ooffset_t *offset, vm_si
 	return (0);
 }
 
-uart_error uart_configure(uart_config* config) {
+static uart_error uart_configure(uart_softc_t* sc, uart_config* config) {
     /* Validate config */
     if (config->data_bits < 5u || config->data_bits > 8u) {
         return UART_INVALID_ARGUMENT_WORDSIZE;
@@ -323,18 +323,18 @@ uart_error uart_configure(uart_config* config) {
     return UART_OK;
 }
 
-void uart_putchar(char c) {
+static void uart_putchar(char c) {
     while (sc->registers->FR & FR_TXFF);
     sc->registers->DR = c;
 }
 
-void uart_write(uart_softc_t* sc, tx_uart_req_t* req) {
+static void uart_write(uart_softc_t* sc, tx_uart_req_t* req) {
     for(size_t i = 0; i < req->length; i++){
         uart_putchar(sc->page->transmit_buffer[i]);
     }
 }
 
-uart_error uart_getchar(uart_softc_t* sc, char* c) {
+static uart_error uart_getchar(uart_softc_t* sc, char* c) {
     if (sc->registers->FR & FR_RXFE) {
         return UART_NO_DATA;
     }
@@ -348,7 +348,7 @@ uart_error uart_getchar(uart_softc_t* sc, char* c) {
     return UART_OK;
 }
 
-int read_until(uart_softc_t* sc, rx_uart_req_t* req){
+static int read_until(uart_softc_t* sc, rx_uart_req_t* req){
     size_t ammount_read = 0;
     while(ammount_read < req->length_wanted){
         char output_char;
