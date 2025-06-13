@@ -41,6 +41,7 @@
 
 #ifdef _KERNEL
 #include <sys/_eventhandler.h>
+#include <sys/vm_mmap.h>
 #else
 #include <sys/queue.h>
 #endif
