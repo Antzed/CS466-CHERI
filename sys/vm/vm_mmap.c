@@ -589,7 +589,6 @@ kern_mmap_hook(struct thread* td, struct mmap_req_hook *uap){
 	 cap_rights_t rights;
 	 mmap_check_fp_fn check_fp_fn;
 	 void * __kerncap extra;
-	 vm_map_t* vm_map;
  
 	 orig_addr = addr = mrp->mr_hint;
 	 max_addr = mrp->mr_max_addr;
